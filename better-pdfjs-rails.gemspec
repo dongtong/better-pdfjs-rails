@@ -4,14 +4,14 @@ $LOAD_PATH.unshift(lib) unless $LOAD_PATH.include?(lib)
 require 'pdfjs/rails/version'
 
 Gem::Specification.new do |spec|
-  spec.name          = "pdfjs-rails"
+  spec.name          = "better-pdfjs-rails"
   spec.version       = Pdfjs::Rails::VERSION
   spec.authors       = ["Stephen Myers"]
   spec.email         = ["scmyers11@gmail.com"]
 
   spec.summary       = %q{Wrapper for Mozilla PDF.js library for use with rails.}
   spec.description   = %q{Wrapper for Mozilla PDF.js library for use with rails. That library can be found here: https://github.com/mozilla/pdf.js}
-  spec.homepage      = "https://github.com/scmyers11/pdfjs-rails"
+  spec.homepage      = "https://github.com/scmyers11/better-pdfjs-rails"
   spec.license       = "MIT"
 
   # Prevent pushing this gem to RubyGems.org. To allow pushes either set the 'allowed_push_host'
