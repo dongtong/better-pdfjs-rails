@@ -1,11 +1,11 @@
 # coding: utf-8
 lib = File.expand_path('../lib', __FILE__)
 $LOAD_PATH.unshift(lib) unless $LOAD_PATH.include?(lib)
-require 'pdfjs/rails/version'
+require 'better/pdfjs/rails/version'
 
 Gem::Specification.new do |spec|
   spec.name          = "better-pdfjs-rails"
-  spec.version       = Pdfjs::Rails::VERSION
+  spec.version       = Better::Pdfjs::Rails::VERSION
   spec.authors       = ["Stephen Myers"]
   spec.email         = ["scmyers11@gmail.com"]
 
