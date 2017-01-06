@@ -23,8 +23,8 @@
  }
 }(this, function (exports) {
  'use strict';
- var pdfjsVersion = '1.6.380';
- var pdfjsBuild = '00a006e';
+ var pdfjsVersion = '1.6.422';
+ var pdfjsBuild = 'aabfb77';
  var pdfjsFilePath = typeof document !== 'undefined' && document.currentScript ? document.currentScript.src : null;
  var pdfjsLibs = {};
  (function pdfjsWrapper() {
@@ -3800,6 +3800,15 @@
       switch (fieldType) {
       case 'Tx':
        return new TextWidgetAnnotationElement(parameters);
+      case 'Btn':
+       if (parameters.data.radioButton) {
+        return new RadioButtonWidgetAnnotationElement(parameters);
+       } else if (parameters.data.checkBox) {
+        return new CheckboxWidgetAnnotationElement(parameters);
+       } else {
+        warn('Unimplemented button widget annotation: pushbutton');
+       }
+       break;
       case 'Ch':
        return new ChoiceWidgetAnnotationElement(parameters);
       }
@@ -4066,6 +4075,45 @@
      }
     });
     return TextWidgetAnnotationElement;
+   }();
+   var CheckboxWidgetAnnotationElement = function CheckboxWidgetAnnotationElementClosure() {
+    function CheckboxWidgetAnnotationElement(parameters) {
+     WidgetAnnotationElement.call(this, parameters, parameters.renderInteractiveForms);
+    }
+    Util.inherit(CheckboxWidgetAnnotationElement, WidgetAnnotationElement, {
+     render: function CheckboxWidgetAnnotationElement_render() {
+      this.container.className = 'buttonWidgetAnnotation checkBox';
+      var element = document.createElement('input');
+      element.disabled = this.data.readOnly;
+      element.type = 'checkbox';
+      if (this.data.fieldValue && this.data.fieldValue !== 'Off') {
+       element.setAttribute('checked', true);
+      }
+      this.container.appendChild(element);
+      return this.container;
+     }
+    });
+    return CheckboxWidgetAnnotationElement;
+   }();
+   var RadioButtonWidgetAnnotationElement = function RadioButtonWidgetAnnotationElementClosure() {
+    function RadioButtonWidgetAnnotationElement(parameters) {
+     WidgetAnnotationElement.call(this, parameters, parameters.renderInteractiveForms);
+    }
+    Util.inherit(RadioButtonWidgetAnnotationElement, WidgetAnnotationElement, {
+     render: function RadioButtonWidgetAnnotationElement_render() {
+      this.container.className = 'buttonWidgetAnnotation radioButton';
+      var element = document.createElement('input');
+      element.disabled = this.data.readOnly;
+      element.type = 'radio';
+      element.name = this.data.fieldName;
+      if (this.data.fieldValue === this.data.buttonValue) {
+       element.setAttribute('checked', true);
+      }
+      this.container.appendChild(element);
+      return this.container;
+     }
+    });
+    return RadioButtonWidgetAnnotationElement;
    }();
    var ChoiceWidgetAnnotationElement = function ChoiceWidgetAnnotationElementClosure() {
     function ChoiceWidgetAnnotationElement(parameters) {
@@ -7094,11 +7142,11 @@
      paintFormXObjectBegin: function CanvasGraphics_paintFormXObjectBegin(matrix, bbox) {
       this.save();
       this.baseTransformStack.push(this.baseTransform);
-      if (isArray(matrix) && 6 === matrix.length) {
+      if (isArray(matrix) && matrix.length === 6) {
        this.transform.apply(this, matrix);
       }
       this.baseTransform = this.ctx.mozCurrentTransform;
-      if (isArray(bbox) && 4 === bbox.length) {
+      if (isArray(bbox) && bbox.length === 4) {
        var width = bbox[2] - bbox[0];
        var height = bbox[3] - bbox[1];
        this.ctx.rect(bbox[0], bbox[1], width, height);
@@ -7226,7 +7274,7 @@
      },
      beginAnnotation: function CanvasGraphics_beginAnnotation(rect, transform, matrix) {
       this.save();
-      if (isArray(rect) && 4 === rect.length) {
+      if (isArray(rect) && rect.length === 4) {
        var width = rect[2] - rect[0];
        var height = rect[3] - rect[1];
        this.ctx.rect(rect[0], rect[1], width, height);
@@ -8304,6 +8352,7 @@
      this.fontLoader = new FontLoader(loadingTask.docId);
      this.destroyed = false;
      this.destroyCapability = null;
+     this._passwordCapability = null;
      this.pageCache = [];
      this.pagePromises = [];
      this.downloadInfoCapability = createPromiseCapability();
@@ -8316,6 +8365,9 @@
       }
       this.destroyed = true;
       this.destroyCapability = createPromiseCapability();
+      if (this._passwordCapability) {
+       this._passwordCapability.reject(new Error('Worker was destroyed during onPassword callback'));
+      }
       var waitOn = [];
       this.pageCache.forEach(function (page) {
        if (page) {
@@ -8343,9 +8395,7 @@
      },
      setupMessageHandler: function WorkerTransport_setupMessageHandler() {
       var messageHandler = this.messageHandler;
-      function updatePassword(password) {
-       messageHandler.send('UpdatePassword', password);
-      }
+      var loadingTask = this.loadingTask;
       var pdfDataRangeTransport = this.pdfDataRangeTransport;
       if (pdfDataRangeTransport) {
        pdfDataRangeTransport.addRangeListener(function (begin, chunk) {
@@ -8372,18 +8422,19 @@
        this.pdfDocument = pdfDocument;
        loadingTask._capability.resolve(pdfDocument);
       }, this);
-      messageHandler.on('NeedPassword', function transportNeedPassword(exception) {
-       var loadingTask = this.loadingTask;
+      messageHandler.on('PasswordRequest', function transportPasswordRequest(exception) {
+       this._passwordCapability = createPromiseCapability();
        if (loadingTask.onPassword) {
-        return loadingTask.onPassword(updatePassword, PasswordResponses.NEED_PASSWORD);
+        var updatePassword = function (password) {
+         this._passwordCapability.resolve({ password: password });
+        }.bind(this);
+        loadingTask.onPassword(updatePassword, exception.code);
+       } else {
+        this._passwordCapability.reject(new PasswordException(exception.message, exception.code));
        }
-       loadingTask._capability.reject(new PasswordException(exception.message, exception.code));
+       return this._passwordCapability.promise;
       }, this);
-      messageHandler.on('IncorrectPassword', function transportIncorrectPassword(exception) {
-       var loadingTask = this.loadingTask;
-       if (loadingTask.onPassword) {
-        return loadingTask.onPassword(updatePassword, PasswordResponses.INCORRECT_PASSWORD);
-       }
+      messageHandler.on('PasswordException', function transportPasswordException(exception) {
        loadingTask._capability.reject(new PasswordException(exception.message, exception.code));
       }, this);
       messageHandler.on('InvalidPDF', function transportInvalidPDF(exception) {

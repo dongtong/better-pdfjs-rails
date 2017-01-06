@@ -23,8 +23,8 @@
  }
 }(this, function (exports) {
  'use strict';
- var pdfjsVersion = '1.6.380';
- var pdfjsBuild = '00a006e';
+ var pdfjsVersion = '1.6.422';
+ var pdfjsBuild = 'aabfb77';
  var pdfjsFilePath = typeof document !== 'undefined' && document.currentScript ? document.currentScript.src : null;
  var pdfjsLibs = {};
  (function pdfjsWrapper() {
@@ -33306,18 +33306,18 @@
    }();
    var CipherTransform = function CipherTransformClosure() {
     function CipherTransform(stringCipherConstructor, streamCipherConstructor) {
-     this.stringCipherConstructor = stringCipherConstructor;
-     this.streamCipherConstructor = streamCipherConstructor;
+     this.StringCipherConstructor = stringCipherConstructor;
+     this.StreamCipherConstructor = streamCipherConstructor;
     }
     CipherTransform.prototype = {
      createStream: function CipherTransform_createStream(stream, length) {
-      var cipher = new this.streamCipherConstructor();
+      var cipher = new this.StreamCipherConstructor();
       return new DecryptStream(stream, length, function cipherTransformDecryptStream(data, finalize) {
        return cipher.decryptBlock(data, finalize);
       });
      },
      decryptString: function CipherTransform_decryptString(s) {
-      var cipher = new this.stringCipherConstructor();
+      var cipher = new this.StringCipherConstructor();
       var data = stringToBytes(s);
       data = cipher.decryptBlock(data, true);
       return bytesToString(data);
@@ -33602,17 +33602,17 @@
        return new NullCipher();
       };
      }
-     if ('V2' === cfm.name) {
+     if (cfm.name === 'V2') {
       return function cipherTransformFactoryBuildCipherConstructorV2() {
        return new ARCFourCipher(buildObjectKey(num, gen, key, false));
       };
      }
-     if ('AESV2' === cfm.name) {
+     if (cfm.name === 'AESV2') {
       return function cipherTransformFactoryBuildCipherConstructorAESV2() {
        return new AES128Cipher(buildObjectKey(num, gen, key, true));
       };
      }
-     if ('AESV3' === cfm.name) {
+     if (cfm.name === 'AESV3') {
       return function cipherTransformFactoryBuildCipherConstructorAESV3() {
        return new AES256Cipher(key);
       };
@@ -39628,6 +39628,7 @@
    function type1FontGlyphMapping(properties, builtInEncoding, glyphNames) {
     var charCodeToGlyphId = Object.create(null);
     var glyphId, charCode, baseEncoding;
+    var isSymbolicFont = !!(properties.flags & FontFlags.Symbolic);
     if (properties.baseEncodingName) {
      baseEncoding = getEncoding(properties.baseEncodingName);
      for (charCode = 0; charCode < baseEncoding.length; charCode++) {
@@ -39638,7 +39639,7 @@
        charCodeToGlyphId[charCode] = 0;
       }
      }
-    } else if (!!(properties.flags & FontFlags.Symbolic)) {
+    } else if (isSymbolicFont) {
      for (charCode in builtInEncoding) {
       charCodeToGlyphId[charCode] = builtInEncoding[charCode];
      }
@@ -43323,12 +43324,12 @@
     return Catalog;
    }();
    var XRef = function XRefClosure() {
-    function XRef(stream, password) {
+    function XRef(stream, pdfManager) {
      this.stream = stream;
+     this.pdfManager = pdfManager;
      this.entries = [];
      this.xrefstms = Object.create(null);
      this.cache = [];
-     this.password = password;
      this.stats = {
       streamTypes: [],
       fontTypes: []
@@ -43349,11 +43350,11 @@
       trailerDict.assignXref(this);
       this.trailer = trailerDict;
       var encrypt = trailerDict.get('Encrypt');
-      if (encrypt) {
+      if (isDict(encrypt)) {
        var ids = trailerDict.get('ID');
        var fileId = ids && ids.length ? ids[0] : '';
        encrypt.suppressEncryption = true;
-       this.encrypt = new CipherTransformFactory(encrypt, fileId, this.password);
+       this.encrypt = new CipherTransformFactory(encrypt, fileId, this.pdfManager.password);
       }
       if (!(this.root = trailerDict.get('Root'))) {
        error('Invalid root reference');
@@ -46070,10 +46071,10 @@
        }
        if (!font.vertical) {
         textChunk.lastAdvanceWidth = width;
-        textChunk.width += width * textChunk.textAdvanceScale;
+        textChunk.width += width;
        } else {
         textChunk.lastAdvanceHeight = height;
-        textChunk.height += Math.abs(height * textChunk.textAdvanceScale);
+        textChunk.height += Math.abs(height);
        }
        return textChunk;
       }
@@ -46094,6 +46095,8 @@
        if (!textContentItem.initialized) {
         return;
        }
+       textContentItem.width *= textContentItem.textAdvanceScale;
+       textContentItem.height *= textContentItem.textAdvanceScale;
        textContent.items.push(runBidiTransform(textContentItem));
        textContentItem.initialized = false;
        textContentItem.str.length = 0;
@@ -46206,16 +46209,16 @@
            advance = items[j] * textState.fontSize / 1000;
            var breakTextRun = false;
            if (textState.font.vertical) {
-            offset = advance * (textState.textHScale * textState.textMatrix[2] + textState.textMatrix[3]);
-            textState.translateTextMatrix(0, advance);
+            offset = advance;
+            textState.translateTextMatrix(0, offset);
             breakTextRun = textContentItem.textRunBreakAllowed && advance > textContentItem.fakeMultiSpaceMax;
             if (!breakTextRun) {
              textContentItem.height += offset;
             }
            } else {
             advance = -advance;
-            offset = advance * (textState.textHScale * textState.textMatrix[0] + textState.textMatrix[1]);
-            textState.translateTextMatrix(advance, 0);
+            offset = advance * textState.textHScale;
+            textState.translateTextMatrix(offset, 0);
             breakTextRun = textContentItem.textRunBreakAllowed && advance > textContentItem.fakeMultiSpaceMax;
             if (!breakTextRun) {
              textContentItem.width += offset;
@@ -46709,7 +46712,16 @@
          } else if (isRef(entry)) {
           hash.update(entry.toString());
          } else if (isArray(entry)) {
-          hash.update(entry.length.toString());
+          var diffLength = entry.length, diffBuf = new Array(diffLength);
+          for (var j = 0; j < diffLength; j++) {
+           var diffEntry = entry[j];
+           if (isName(diffEntry)) {
+            diffBuf[j] = diffEntry.name;
+           } else if (isNum(diffEntry) || isRef(diffEntry)) {
+            diffBuf[j] = diffEntry.toString();
+           }
+          }
+          hash.update(diffBuf.join());
          }
         }
        }
@@ -47985,6 +47997,8 @@
       switch (fieldType) {
       case 'Tx':
        return new TextWidgetAnnotation(parameters);
+      case 'Btn':
+       return new ButtonWidgetAnnotation(parameters);
       case 'Ch':
        return new ChoiceWidgetAnnotation(parameters);
       }
@@ -48412,17 +48426,72 @@
     });
     return TextWidgetAnnotation;
    }();
+   var ButtonWidgetAnnotation = function ButtonWidgetAnnotationClosure() {
+    function ButtonWidgetAnnotation(params) {
+     WidgetAnnotation.call(this, params);
+     this.data.checkBox = !this.hasFieldFlag(AnnotationFieldFlag.RADIO) && !this.hasFieldFlag(AnnotationFieldFlag.PUSHBUTTON);
+     if (this.data.checkBox) {
+      if (!isName(this.data.fieldValue)) {
+       return;
+      }
+      this.data.fieldValue = this.data.fieldValue.name;
+     }
+     this.data.radioButton = this.hasFieldFlag(AnnotationFieldFlag.RADIO) && !this.hasFieldFlag(AnnotationFieldFlag.PUSHBUTTON);
+     if (this.data.radioButton) {
+      this.data.fieldValue = this.data.buttonValue = null;
+      var fieldParent = params.dict.get('Parent');
+      if (!isDict(fieldParent) || !fieldParent.has('V')) {
+       return;
+      }
+      var fieldParentValue = fieldParent.get('V');
+      if (!isName(fieldParentValue)) {
+       return;
+      }
+      this.data.fieldValue = fieldParentValue.name;
+      var appearanceStates = params.dict.get('AP');
+      if (!isDict(appearanceStates)) {
+       return;
+      }
+      var normalAppearanceState = appearanceStates.get('N');
+      if (!isDict(normalAppearanceState)) {
+       return;
+      }
+      var keys = normalAppearanceState.getKeys();
+      for (var i = 0, ii = keys.length; i < ii; i++) {
+       if (keys[i] !== 'Off') {
+        this.data.buttonValue = keys[i];
+        break;
+       }
+      }
+     }
+    }
+    Util.inherit(ButtonWidgetAnnotation, WidgetAnnotation, {
+     getOperatorList: function ButtonWidgetAnnotation_getOperatorList(evaluator, task, renderForms) {
+      var operatorList = new OperatorList();
+      if (renderForms) {
+       return Promise.resolve(operatorList);
+      }
+      if (this.appearance) {
+       return Annotation.prototype.getOperatorList.call(this, evaluator, task, renderForms);
+      }
+      return Promise.resolve(operatorList);
+     }
+    });
+    return ButtonWidgetAnnotation;
+   }();
    var ChoiceWidgetAnnotation = function ChoiceWidgetAnnotationClosure() {
     function ChoiceWidgetAnnotation(params) {
      WidgetAnnotation.call(this, params);
      this.data.options = [];
-     var options = params.dict.getArray('Opt');
+     var options = params.dict.get('Opt');
      if (isArray(options)) {
+      var xref = params.xref;
       for (var i = 0, ii = options.length; i < ii; i++) {
-       var option = options[i];
+       var option = xref.fetchIfRef(options[i]);
+       var isOptionArray = isArray(option);
        this.data.options[i] = {
-        exportValue: isArray(option) ? option[0] : option,
-        displayValue: isArray(option) ? option[1] : option
+        exportValue: isOptionArray ? xref.fetchIfRef(option[0]) : option,
+        displayValue: isOptionArray ? xref.fetchIfRef(option[1]) : option
        };
       }
      }
@@ -48818,21 +48887,19 @@
    var PDFDocument = function PDFDocumentClosure() {
     var FINGERPRINT_FIRST_BYTES = 1024;
     var EMPTY_FINGERPRINT = '\x00\x00\x00\x00\x00\x00\x00' + '\x00\x00\x00\x00\x00\x00\x00\x00\x00';
-    function PDFDocument(pdfManager, arg, password) {
+    function PDFDocument(pdfManager, arg) {
+     var stream;
      if (isStream(arg)) {
-      init.call(this, pdfManager, arg, password);
+      stream = arg;
      } else if (isArrayBuffer(arg)) {
-      init.call(this, pdfManager, new Stream(arg), password);
+      stream = new Stream(arg);
      } else {
       error('PDFDocument: Unknown argument type');
      }
-    }
-    function init(pdfManager, stream, password) {
      assert(stream.length > 0, 'stream must have data');
      this.pdfManager = pdfManager;
      this.stream = stream;
-     var xref = new XRef(this.stream, password, pdfManager);
-     this.xref = xref;
+     this.xref = new XRef(stream, pdfManager);
     }
     function find(stream, needle, limit, backwards) {
      var pos = stream.pos;
@@ -49065,6 +49132,9 @@
      get docId() {
       return this._docId;
      },
+     get password() {
+      return this._password;
+     },
      get docBaseUrl() {
       var docBaseUrl = null;
       if (this._docBaseUrl) {
@@ -49108,14 +49178,7 @@
       return new NotImplementedException();
      },
      updatePassword: function BasePdfManager_updatePassword(password) {
-      this.pdfDocument.xref.password = this.password = password;
-      if (this._passwordChangedCapability) {
-       this._passwordChangedCapability.resolve();
-      }
-     },
-     passwordChanged: function BasePdfManager_passwordChanged() {
-      this._passwordChangedCapability = createPromiseCapability();
-      return this._passwordChangedCapability.promise;
+      this._password = password;
      },
      terminate: function BasePdfManager_terminate() {
       return new NotImplementedException();
@@ -49126,10 +49189,11 @@
    var LocalPdfManager = function LocalPdfManagerClosure() {
     function LocalPdfManager(docId, data, password, evaluatorOptions, docBaseUrl) {
      this._docId = docId;
+     this._password = password;
      this._docBaseUrl = docBaseUrl;
      this.evaluatorOptions = evaluatorOptions;
      var stream = new Stream(data);
-     this.pdfDocument = new PDFDocument(this, stream, password);
+     this.pdfDocument = new PDFDocument(this, stream);
      this._loadedStreamCapability = createPromiseCapability();
      this._loadedStreamCapability.resolve(stream);
     }
@@ -49168,6 +49232,7 @@
    var NetworkPdfManager = function NetworkPdfManagerClosure() {
     function NetworkPdfManager(docId, pdfNetworkStream, args, evaluatorOptions, docBaseUrl) {
      this._docId = docId;
+     this._password = args.password;
      this._docBaseUrl = docBaseUrl;
      this.msgHandler = args.msgHandler;
      this.evaluatorOptions = evaluatorOptions;
@@ -49179,7 +49244,7 @@
       rangeChunkSize: args.rangeChunkSize
      };
      this.streamManager = new ChunkedStreamManager(pdfNetworkStream, params);
-     this.pdfDocument = new PDFDocument(this, this.streamManager.getStream(), args.password);
+     this.pdfDocument = new PDFDocument(this, this.streamManager.getStream());
     }
     Util.inherit(NetworkPdfManager, BasePdfManager, {
      ensure: function NetworkPdfManager_ensure(obj, prop, args) {
@@ -49681,18 +49746,23 @@
       };
       return pdfManagerCapability.promise;
      }
-     var setupDoc = function (data) {
-      var onSuccess = function (doc) {
+     function setupDoc(data) {
+      function onSuccess(doc) {
        ensureNotTerminated();
        handler.send('GetDoc', { pdfInfo: doc });
-      };
-      var onFailure = function (e) {
+      }
+      function onFailure(e) {
        if (e instanceof PasswordException) {
-        if (e.code === PasswordResponses.NEED_PASSWORD) {
-         handler.send('NeedPassword', e);
-        } else if (e.code === PasswordResponses.INCORRECT_PASSWORD) {
-         handler.send('IncorrectPassword', e);
-        }
+        var task = new WorkerTask('PasswordException: response ' + e.code);
+        startWorkerTask(task);
+        handler.sendWithPromise('PasswordRequest', e).then(function (data) {
+         finishWorkerTask(task);
+         pdfManager.updatePassword(data.password);
+         pdfManagerReady();
+        }).catch(function (ex) {
+         finishWorkerTask(task);
+         handler.send('PasswordException', ex);
+        }.bind(null, e));
        } else if (e instanceof InvalidPDFException) {
         handler.send('InvalidPDF', e);
        } else if (e instanceof MissingPDFException) {
@@ -49702,7 +49772,22 @@
        } else {
         handler.send('UnknownError', new UnknownErrorException(e.message, e.toString()));
        }
-      };
+      }
+      function pdfManagerReady() {
+       ensureNotTerminated();
+       loadDocument(false).then(onSuccess, function loadFailure(ex) {
+        ensureNotTerminated();
+        if (!(ex instanceof XRefParseException)) {
+         onFailure(ex);
+         return;
+        }
+        pdfManager.requestLoadedStream();
+        pdfManager.onLoadedStream().then(function () {
+         ensureNotTerminated();
+         loadDocument(true).then(onSuccess, onFailure);
+        });
+       }, onFailure);
+      }
       ensureNotTerminated();
       var cMapOptions = {
        url: data.cMapUrl === undefined ? null : data.cMapUrl,
@@ -49724,25 +49809,8 @@
        pdfManager.onLoadedStream().then(function (stream) {
         handler.send('DataLoaded', { length: stream.bytes.byteLength });
        });
-      }).then(function pdfManagerReady() {
-       ensureNotTerminated();
-       loadDocument(false).then(onSuccess, function loadFailure(ex) {
-        ensureNotTerminated();
-        if (!(ex instanceof XRefParseException)) {
-         if (ex instanceof PasswordException) {
-          pdfManager.passwordChanged().then(pdfManagerReady);
-         }
-         onFailure(ex);
-         return;
-        }
-        pdfManager.requestLoadedStream();
-        pdfManager.onLoadedStream().then(function () {
-         ensureNotTerminated();
-         loadDocument(true).then(onSuccess, onFailure);
-        });
-       }, onFailure);
-      }, onFailure);
-     };
+      }).then(pdfManagerReady, onFailure);
+     }
      handler.on('GetPage', function wphSetupGetPage(data) {
       return pdfManager.getPage(data.pageIndex).then(function (page) {
        var rotatePromise = pdfManager.ensure(page, 'rotate');
@@ -49801,9 +49869,6 @@
      });
      handler.on('GetStats', function wphSetupGetStats(data) {
       return pdfManager.pdfDocument.xref.stats;
-     });
-     handler.on('UpdatePassword', function wphSetupUpdatePassword(data) {
-      pdfManager.updatePassword(data);
      });
      handler.on('GetAnnotations', function wphSetupGetAnnotations(data) {
       return pdfManager.getPage(data.pageIndex).then(function (page) {
